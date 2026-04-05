@@ -23,48 +23,16 @@
 
 <h2><a id="features"></a>Features</h2>
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-
-### Download
-- Download YouTube videos in any quality (360p to 4K)
-- Download audio only as MP3
-- Clip specific portions of videos
-- Progress bar for all downloads
-
-</td>
-    <td width="50%" valign="top">
-
-### Upload
-- Automatic upload to your Google Drive
-- Upload files sent directly to the bot (up to 20MB)
-- Progress bar for uploads
-- Get notified when video is watchable on Drive
-
-</td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-
-### Quality Control
-- Choose from 360p, 480p, 720p, 1080p, 1440p, 4K
-- MP3 audio extraction at 192kbps
-- Remembers your quality preference
-
-</td>
-    <td width="50%" valign="top">
-
-### Security
-- Restrict bot access to specific Telegram user IDs
-- Your Google credentials stay on your machine
-- No data stored on external servers
-
-</td>
-  </tr>
-</table>
-
 </div>
+
+- Download YouTube videos in any quality (360p, 480p, 720p, 1080p, 1440p, 4K)
+- Download audio only as MP3 (192kbps)
+- Clip specific portions of a video (e.g. only from 1:35 to 4:24)
+- Upload files, videos, or photos directly to Drive (up to 20MB)
+- Progress bar for downloads and uploads
+- Get notified when your video is watchable on Google Drive
+- Restrict access to specific Telegram users
+- All credentials stay on your machine — nothing stored externally
 
 ---
 
@@ -74,12 +42,10 @@
 
 </div>
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| Send a YouTube link | Downloads and uploads to Drive | `https://youtu.be/abc123` |
-| `/quality` | Choose download quality | Select from menu |
-| `/clip START END LINK` | Download a specific portion | `/clip 1:35 4:24 https://youtu.be/abc123` |
-| Send a file | Uploads directly to Drive (max 20MB) | Send any file, video, or photo |
+- **Send a YouTube link** — downloads the video and uploads it to your Drive
+- **/quality** — choose your preferred download quality
+- **/clip 1:35 4:24 https://youtu.be/abc123** — download only a specific portion
+- **Send any file** — uploads it directly to your Drive (max 20MB)
 
 ---
 
@@ -160,12 +126,10 @@ Or double-click **`start_bot_generic.bat`**
 
 </div>
 
-| Problem | Solution |
-|---------|----------|
-| `invalid_grant` error | Delete `token.json` and restart the bot to re-authenticate |
-| "Video not available" for public videos | Make sure Deno is installed and run `yt-dlp --remote-components ejs:github` |
-| Bot not responding | Make sure only one instance is running (check Task Manager for extra `python.exe`) |
-| SSL certificate errors | Run `pip install --upgrade certifi` |
+- **`invalid_grant` error** — Delete `token.json` and restart the bot to re-authenticate
+- **"Video not available" for public videos** — Make sure Deno is installed and run `yt-dlp --remote-components ejs:github`
+- **Bot not responding** — Make sure only one instance is running (check Task Manager for extra `python.exe`)
+- **SSL certificate errors** — Run `pip install --upgrade certifi`
 
 ---
 

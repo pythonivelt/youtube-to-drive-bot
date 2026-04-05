@@ -97,13 +97,19 @@
 | **FFmpeg** | `winget install Gyan.FFmpeg` |
 | **Deno** | `winget install DenoLand.Deno` then run `yt-dlp --remote-components ejs:github` once |
 
-### Step 1 — Create a Telegram Bot
+### Step 1 — Download the Bot
+
+1. Click the green **Code** button at the top of this page
+2. Click **Download ZIP**
+3. Unzip the folder and place it wherever you want on your computer
+
+### Step 2 — Create a Telegram Bot
 
 1. Open Telegram and search for `@BotFather`
 2. Send `/newbot` and follow the prompts
 3. Copy the **bot token** (looks like `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`)
 
-### Step 2 — Set Up Google Drive API
+### Step 3 — Set Up Google Drive API
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project
@@ -115,12 +121,12 @@
 5. Download the credentials JSON file
 6. **Rename it to `client_secret.json`** and place it in the bot folder
 
-### Step 3 — Get Your Telegram User ID
+### Step 4 — Get Your Telegram User ID
 
 1. Open Telegram and search for `@userinfobot`
 2. Send it any message — it will reply with your user ID
 
-### Step 4 — Configure
+### Step 5 — Configure
 
 1. Rename `.env.example` to `.env`
 2. Fill in your values:
@@ -134,7 +140,7 @@ ALLOWED_USER_IDS=your_telegram_user_id_here
 > `GOOGLE_DRIVE_FOLDER_ID` is optional. Leave empty to upload to your Drive root.
 > For multiple users, separate IDs with commas: `123456,789012`
 
-### Step 5 — Install & Run
+### Step 6 — Install & Run
 
 ```bash
 pip install -r requirements.txt

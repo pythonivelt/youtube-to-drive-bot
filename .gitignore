@@ -1,0 +1,7 @@
+.env
+token.json
+client_secret.json
+__pycache__/
+*.session
+*.zip
+start_bot.bat

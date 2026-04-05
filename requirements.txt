@@ -1,0 +1,7 @@
+python-telegram-bot==21.6
+yt-dlp
+google-api-python-client
+google-auth
+google-auth-oauthlib
+python-dotenv
+certifi

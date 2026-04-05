@@ -101,7 +101,8 @@
 
 1. Click the green **Code** button at the top of this page
 2. Click **Download ZIP**
-3. Unzip the folder and place it wherever you want on your computer
+3. Unzip it to a folder on your computer (e.g. `C:\Users\YourName\Documents\youtube-to-drive-bot`)
+4. Remember where you put this folder — you'll need it later
 
 ### Step 2 — Create a Telegram Bot
 

@@ -5,3 +5,5 @@ google-auth
 google-auth-oauthlib
 python-dotenv
 certifi
+mutagen
+Pillow

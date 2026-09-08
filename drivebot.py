@@ -919,72 +919,62 @@ async def clip(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_name = os.path.join(tmp_dir, files[0])
             shutil.move(file_name, clip_path)
         else:
-            # Regular video: try partial download, fallback to full + ffmpeg
-            if quality == "mp3":
-                ydl_opts = {
-                    "outtmpl": os.path.join(tmp_dir, "%(title)s.%(ext)s"),
-                    "format": "bestaudio/best",
-                    "download_ranges": yt_dlp.utils.download_range_func(None, [(start_sec, end_sec)]),
-                    "force_keyframes_at_cuts": True,
-                    "noplaylist": True,
-                    "quiet": True,
-                    "progress_hooks": [download_hook],
-                }
+            duration_sec = end_sec - start_sec
+            yt_dlp_bin = shutil.which("yt-dlp") or "/home/ms/telegram-yt-drive-bot/venv/bin/yt-dlp"
+            section = f"*{start_sec}-{end_sec}"
+
+            vid_w = info.get("width") or 0
+            vid_h = info.get("height") or 0
+            if vid_h > vid_w and vid_w > 0:
+                dim = f"width<={quality}"
             else:
-                vid_w = info.get("width") or 0
-                vid_h = info.get("height") or 0
-                if vid_h > vid_w and vid_w > 0:
-                    dim = f"width<={quality}"
-                else:
-                    dim = f"height<={quality}"
-                ydl_opts = {
-                    "outtmpl": os.path.join(tmp_dir, "%(title)s.%(ext)s"),
-                    "format": f"bestvideo[{dim}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[{dim}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[{dim}]+bestaudio/best[height<={quality}]/best",
-                    "merge_output_format": "mp4",
-                    "download_ranges": yt_dlp.utils.download_range_func(None, [(start_sec, end_sec)]),
-                    "force_keyframes_at_cuts": True,
-                    "noplaylist": True,
-                    "quiet": True,
-                    "progress_hooks": [download_hook],
-                }
+                dim = f"height<={quality}"
 
-            def do_download():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    dl_info = ydl.extract_info(url, download=True)
-                    fname = ydl.prepare_filename(dl_info)
-                    if quality == "mp3":
-                        fname = os.path.splitext(fname)[0] + ".mp3"
-                    return fname
+            if quality == "mp3":
+                ytdl_cmd = [yt_dlp_bin, "--download-sections", section,
+                            "-f", "bestaudio/best",
+                            "-x", "--audio-format", "mp3", "--audio-quality", "320k",
+                            "-o", os.path.join(tmp_dir, "%(title)s.%(ext)s"),
+                            "--no-playlist", "--quiet", url]
+            else:
+                fmt = f"bestvideo[{dim}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[{dim}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[{dim}]+bestaudio/best[height<={quality}]/best"
+                ytdl_cmd = [yt_dlp_bin, "--download-sections", section,
+                            "-f", fmt, "--merge-output-format", "mp4",
+                            "-o", os.path.join(tmp_dir, "%(title)s.%(ext)s"),
+                            "--no-playlist", "--quiet", url]
 
-            try:
-                file_name = await asyncio.to_thread(do_download)
-                _check_cancel(uid)
-                shutil.move(file_name, clip_path)
-            except Exception as partial_err:
-                if "partially downloaded" not in str(partial_err) and "cannot be" not in str(partial_err):
-                    raise
-                logger.info("Partial download not supported, falling back to full download + ffmpeg cut")
-                await safe_edit(status_msg, f"{label}\n{_progress_bar(0)}")
-            for k in ("download_ranges", "force_keyframes_at_cuts", "live_from_start"):
-                ydl_opts.pop(k, None)
-            finished_streams[0] = 0
+            def run_section_dl():
+                proc = subprocess.Popen(ytdl_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                start_time = time.time()
+                while proc.poll() is None:
+                    if cancel_flags.get(uid):
+                        proc.kill()
+                        proc.wait()
+                        raise TaskCancelled()
+                    elapsed = time.time() - start_time
+                    pct = min(int((elapsed / max(duration_sec * 2, 1)) * 80) + 10, 90)
+                    asyncio.run_coroutine_threadsafe(
+                        safe_edit(status_msg, f"{label}\n{_progress_bar(pct)}"), loop)
+                    time.sleep(3)
+                if proc.returncode != 0:
+                    stderr = proc.stderr.read().decode(errors="replace")
+                    raise Exception(f"Clip download failed: {stderr[:500]}")
 
-            def do_full_download():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    dl_info = ydl.extract_info(url, download=True)
-                    fname = ydl.prepare_filename(dl_info)
-                    if quality == "mp3":
-                        fname = os.path.splitext(fname)[0] + ".mp3"
-                    return fname
-
-            file_name = await asyncio.to_thread(do_full_download)
+            clip_timeout = max(duration_sec * 5, 180)
+            await asyncio.wait_for(asyncio.to_thread(run_section_dl), timeout=clip_timeout)
             _check_cancel(uid)
-            await safe_edit(status_msg,"Cutting clip...")
-            if quality == "mp3":
-                ffmpeg_cmd = ["ffmpeg", "-y", "-ss", str(start_sec), "-i", file_name, "-t", str(duration), "-vn", "-acodec", "libmp3lame", "-ab", "192k", clip_path]
+            files = [f for f in os.listdir(tmp_dir) if f.endswith((".mp4", ".mp3", ".mkv", ".webm"))]
+            if not files:
+                raise Exception("No output file from clip download")
+            file_name = os.path.join(tmp_dir, files[0])
+            trimmed = clip_path + ".trim" + os.path.splitext(file_name)[1]
+            trim_cmd = ["ffmpeg", "-y", "-ss", "0", "-i", file_name,
+                        "-t", str(duration_sec), "-c", "copy", "-avoid_negative_ts", "1", trimmed]
+            subprocess.run(trim_cmd, capture_output=True, timeout=120)
+            if os.path.exists(trimmed) and os.path.getsize(trimmed) > 0:
+                shutil.move(trimmed, clip_path)
             else:
-                ffmpeg_cmd = ["ffmpeg", "-y", "-ss", str(start_sec), "-i", file_name, "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "make_zero", clip_path]
-            await asyncio.to_thread(subprocess.run, ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                shutil.move(file_name, clip_path)
 
         if quality == "mp3":
             await asyncio.to_thread(_add_music_metadata, clip_path, info)
@@ -1352,10 +1342,11 @@ async def combine(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update):
         return
-    token_path = os.path.join(os.path.dirname(__file__), "token.json")
+    from drive_service import get_current_account, _token_file_for
+    token_path = _token_file_for(get_current_account())
     if os.path.exists(token_path):
         os.remove(token_path)
-        await update.message.reply_text("✅ Logged out. Use /login to sign in again.")
+        await update.message.reply_text(f"✅ Logged out of {get_current_account()}. Use /login to sign in again.")
     else:
         await update.message.reply_text("No account is logged in. Use /login to sign in.")
 
@@ -1363,38 +1354,85 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update):
         return
-    token_path = os.path.join(os.path.dirname(__file__), "token.json")
+    from drive_service import get_current_account, _token_file_for
+    token_path = _token_file_for(get_current_account())
     if os.path.exists(token_path):
-        await update.message.reply_text("Already logged in. Use /logout first if you want to switch accounts.")
+        await update.message.reply_text(f"Already logged in as {get_current_account()}. Use /account to switch or /logout first.")
         return
     loop = asyncio.get_event_loop()
     _setup_auth_callback(update, loop)
     import drive_service
-    await asyncio.to_thread(drive_service._get_service)
+    service = await asyncio.to_thread(drive_service._get_service)
+    try:
+        about = await asyncio.to_thread(lambda: service.about().get(fields="user").execute())
+        email = about.get("user", {}).get("emailAddress", get_current_account())
+        await update.message.reply_text(f"✅ Logged in as {email}")
+    except Exception:
+        await update.message.reply_text(f"✅ Logged in as {get_current_account()}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update):
         return
-    token_path = os.path.join(os.path.dirname(__file__), "token.json")
+    from drive_service import get_current_account, _token_file_for, list_accounts
+    token_path = _token_file_for(get_current_account())
     if not os.path.exists(token_path):
-        await update.message.reply_text("Not logged in to Google Drive.")
+        await update.message.reply_text(f"📧 Active account: {get_current_account()}\n❌ Not logged in — use /login to sign in.")
         return
     try:
-        import json
-        with open(token_path) as f:
-            token_data = json.load(f)
-        email = token_data.get("client_id", "")
-        # Use Drive API to get the actual account email
         from drive_service import _get_service
         service = await asyncio.to_thread(_get_service)
         about = await asyncio.to_thread(
-            lambda: service.about().get(fields="user").execute()
+            lambda: service.about().get(fields="user,storageQuota").execute()
         )
         email = about.get("user", {}).get("emailAddress", "unknown")
-        await update.message.reply_text(f"✅ Logged in as: {email}")
+        quota = about.get("storageQuota", {})
+        used = round(int(quota.get("usage", 0)) / (1024**3), 2)
+        total = round(int(quota.get("limit", 0)) / (1024**3), 2)
+        free = round(total - used, 2)
+        pct = int(used / total * 100) if total > 0 else 0
+        bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+        await update.message.reply_text(
+            f"📧 Active account: {email}\n"
+            f"💾 Storage: {used} GB / {total} GB ({free} GB free)\n"
+            f"[{bar}] {pct}%"
+        )
     except Exception as e:
-        await update.message.reply_text(f"Logged in but couldn't fetch account info:\n{e}")
+        await update.message.reply_text(f"📧 Active account: {get_current_account()}\n⚠️ Couldn't fetch details: {e}")
+
+
+async def account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    from drive_service import list_accounts, get_current_account
+    accounts = list_accounts()
+    buttons = []
+    for acc in accounts:
+        label = acc["email"]
+        if acc["active"]:
+            label = f"▶️ {label} (active)"
+        elif acc["logged_in"]:
+            label = f"🔑 {label}"
+        else:
+            label = f"⬜ {label}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"acc_{acc['email']}")])
+    text = f"📧 Current account: {get_current_account()}\n\nTap to switch:\n▶️ = active  🔑 = saved login  ⬜ = needs login"
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def account_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data.startswith("acc_"):
+        email = data[4:]
+        from drive_service import set_current_account, _token_file_for
+        set_current_account(email)
+        token_path = _token_file_for(email)
+        if os.path.exists(token_path):
+            await query.edit_message_text(f"✅ Switched to {email}")
+        else:
+            await query.edit_message_text(f"Switched to {email}\n\nNot logged in yet — use /login to sign in with this account.")
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1759,13 +1797,14 @@ async def post_init(application):
         BotCommand("speedtest", "Run a speedtest on the Pi"),
         BotCommand("ytcheck", "Check if YouTube is blocking downloads"),
         BotCommand("uploads", "Show last 10 uploaded files on Drive"),
+        BotCommand("account", "Switch Google Drive account"),
     ]
     await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
 
 
 def main():
-    request = HTTPXRequest(read_timeout=600, write_timeout=600, connect_timeout=30)
+    request = HTTPXRequest(read_timeout=600, write_timeout=600, connect_timeout=30, connection_pool_size=64, pool_timeout=60)
     app = Application.builder().token(BOT_TOKEN).request(request).base_url("http://localhost:8081/bot").base_file_url("http://localhost:8081/file/bot").local_mode(True).post_init(post_init).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("quality", set_quality))
@@ -1781,8 +1820,10 @@ def main():
     app.add_handler(CommandHandler("speedtest", speedtest))
     app.add_handler(CommandHandler("ytcheck", ytcheck))
     app.add_handler(CommandHandler("uploads", uploads_cmd))
+    app.add_handler(CommandHandler("account", account))
     app.add_handler(CallbackQueryHandler(quality_callback, pattern=r"^quality_"))
     app.add_handler(CallbackQueryHandler(tmp_callback, pattern=r"^tmp_"))
+    app.add_handler(CallbackQueryHandler(account_callback, pattern=r"^acc_"))
     app.add_handler(CallbackQueryHandler(uploads_callback, pattern=r"^upl_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(

@@ -12,9 +12,35 @@ from googleapiclient.http import MediaFileUpload
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 CLIENT_SECRETS_FILE = os.path.join(os.path.dirname(__file__), "client_secret.json")
-TOKEN_FILE = os.path.join(os.path.dirname(__file__), "token.json")
+TOKEN_DIR = os.path.dirname(__file__)
 
 DRIVE_FOLDER_ID = os.environ.get("GOOGLE_DRIVE_FOLDER_ID")
+
+ACCOUNTS = ["pythonivelt5@gmail.com", "pythonivelt7@gmail.com", "pythonivelt8@gmail.com"]
+current_account = ACCOUNTS[0]
+
+
+def _token_file_for(email):
+    safe = email.replace("@", "_at_").replace(".", "_")
+    return os.path.join(TOKEN_DIR, f"token_{safe}.json")
+
+
+def get_current_account():
+    return current_account
+
+
+def set_current_account(email):
+    global current_account
+    current_account = email
+
+
+def list_accounts():
+    result = []
+    for email in ACCOUNTS:
+        tf = _token_file_for(email)
+        logged_in = os.path.exists(tf)
+        result.append({"email": email, "active": email == current_account, "logged_in": logged_in})
+    return result
 
 # Set from bot.py — sends auth URL to user via Telegram
 auth_url_callback = None
@@ -37,6 +63,7 @@ waiting_for_auth = False
 
 def _get_service():
     global auth_response_value, waiting_for_auth
+    TOKEN_FILE = _token_file_for(current_account)
     creds = None
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
